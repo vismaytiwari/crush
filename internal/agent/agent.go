@@ -12,6 +12,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -926,7 +927,7 @@ func (a *sessionAgent) Run(ctx context.Context, call SessionAgentCall) (result *
 			toolCall := message.ToolCall{
 				ID:               tc.ToolCallID,
 				Name:             tc.ToolName,
-				Input:            tc.Input,
+				Input:            sanitizeToolInput(tc.ToolName, tc.ToolCallID, tc.Input),
 				ProviderExecuted: false,
 				Finished:         true,
 			}
@@ -2179,4 +2180,19 @@ func providerRetryLogFields(err *fantasy.ProviderError, delay time.Duration) []a
 		fields = append(fields, "message", err.Message)
 	}
 	return fields
+}
+
+// sanitizeToolInput validates tool call JSON from the provider.
+// Malformed input is replaced with an empty object to prevent
+// stuck conversations from truncated or malformed model output.
+func sanitizeToolInput(toolName, toolCallID, input string) string {
+	if !json.Valid([]byte(input)) {
+		slog.Warn("Malformed tool call JSON from provider, replacing with empty object",
+			"tool", toolName,
+			"id", toolCallID,
+			"input_len", len(input),
+		)
+		return "{}"
+	}
+	return input
 }
